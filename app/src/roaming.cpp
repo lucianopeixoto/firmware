@@ -113,7 +113,7 @@ void noteHeard(int i, int dbm)
 {
     const int floorDbm = floorAt(i); // takes sitesLock itself
     sitesLock.lock();
-    heardList.heard(static_cast<std::uint8_t>(i), dbm, floorDbm, os::nowMs());
+    heardList.heard(static_cast<std::uint8_t>(i), dbm, floorDbm, os::nowMs(), Levels.weakDb);
     sitesLock.unlock();
 }
 
@@ -566,7 +566,7 @@ void burst(std::uint8_t colourCode, bool call)
     // through back-to-back calls: each burst keeps it current meanwhile.
     if (site >= 0 && colourCode == tunedColourCode()) {
         sitesLock.lock();
-        heardList.stillHeard(static_cast<std::uint8_t>(site), now);
+        heardList.stillHeard(static_cast<std::uint8_t>(site), now, Levels.weakDb);
         sitesLock.unlock();
     }
 }

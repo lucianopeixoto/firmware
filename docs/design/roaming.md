@@ -169,21 +169,24 @@ steer listening and moving; a call always wakes the repeater first.
 | State | When |
 |---|---|
 | Good | heard lately at or above Weak |
-| Weak | heard lately below Weak, or heard lately but a wake-up went unanswered |
+| Weak | heard lately below Weak, but heard at or above Weak within the last 2 minutes; or heard lately but a wake-up went unanswered |
 | Quiet | not heard for 2 minutes, last heard at or above Weak; or none in use yet |
-| Lost | not heard for 2 minutes, and last heard below Weak or a wake-up went unanswered |
+| Lost | not heard at or above Weak for 2 minutes, and heard below Weak or a wake-up went unanswered |
 
 Silence alone never makes it lost: a quiet repeater looks the same as one
 out of reach, and many repeaters never send beacons. How it was last heard
 tells them apart: one that went silent while strong is likely idle, one
-that faded first likely out of reach. A full heard list never drops the
-repeater in use, so that this stays known.
+that faded first likely out of reach. A repeater heard only below the weak
+level counts as lost once it has not been heard at or above it for 2
+minutes. A full heard list never drops the repeater in use, so that this
+stays known.
 
 ### 3.3 The heard list
 
 Up to 8 repeaters heard lately, each with its level (the average of the
-last two readings), how many readings and when. A level is current for 2
-minutes. It is read when the slot timing of a transmission is found.
+last two readings), how many readings and when, and when it was last heard
+at or above Weak. A level is current for 2 minutes. It is read when the
+slot timing of a transmission is found.
 While a repeater keeps transmitting (calls back to back), each DMR burst
 from it keeps its level current; a carrier alone does not, since it may
 be another signal or noise.
@@ -299,6 +302,15 @@ noise floors.
   or by a wake-up.
 - Keeping the repeater in use across power-off needs settings that
   survive a power-off.
+- A repeater counted as lost while still heard below Weak shows
+  `No repeater` while its calls still play: it needs its own display
+  state.
+- Two weak repeaters could take turns as lost, moving back and forth; a
+  margin on the move would add a rule.
+- A lost repeater moves to the strongest heard on a single reading.
+- Where only weak repeaters are in reach, the radio listens elsewhere
+  about a third of the time with nothing to gain, and could clip the
+  start of calls.
 
 ## Sources
 

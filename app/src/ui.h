@@ -70,7 +70,7 @@ struct DmrCall
 struct Roaming
 {
     bool searching;
-    bool lost; // the repeater in use did not answer a wake-up, and has not been heard since
+    bool lost; // the repeater in use is lost: unanswered, faded out, or not heard at or above Weak for 2 minutes
     std::int8_t site;
     std::uint32_t receiveHz;
     std::uint8_t colourCode;

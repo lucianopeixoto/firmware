@@ -24,40 +24,43 @@ namespace roaming = dmm::services::roaming;
 
 TEST_CASE("the heard list keeps a smoothed level per repeater")
 {
+    const Levels l;
     HeardList h;
-    h.heard(3, -80, Floor, 1000);
+    h.heard(3, -80, Floor, 1000, l.weakDb);
     REQUIRE(h.find(3) != nullptr);
     CHECK(h.find(3)->levelDbm == -80);
-    h.heard(3, -90, Floor, 2000); // fresh: averaged
+    h.heard(3, -90, Floor, 2000, l.weakDb); // fresh: averaged
     CHECK(h.find(3)->levelDbm == -85);
-    h.heard(3, -100, Floor, 2000 + HeardList::ValidMs); // stale: replaced
+    h.heard(3, -100, Floor, 2000 + HeardList::ValidMs, l.weakDb); // stale: replaced
     CHECK(h.find(3)->levelDbm == -100);
     CHECK(h.find(4) == nullptr);
-    h.heard(4, -300, Floor, 0); // beyond the range is held at its end
+    h.heard(4, -300, Floor, 0, l.weakDb); // beyond the range is held at its end
     CHECK(h.find(4)->levelDbm == -128);
 }
 
 TEST_CASE("a full heard list never drops the repeater in use")
 {
+    const Levels l;
     HeardList h;
     h.keep(0);
     for (std::uint8_t i = 0; i < HeardList::Capacity; ++i) {
-        h.heard(i, -70, Floor, 1000 + i * 1000u);
+        h.heard(i, -70, Floor, 1000 + i * 1000u, l.weakDb);
     }
-    h.heard(40, -60, Floor, 20'000);
-    h.heard(41, -60, Floor, 21'000);
+    h.heard(40, -60, Floor, 20'000, l.weakDb);
+    h.heard(41, -60, Floor, 21'000, l.weakDb);
     CHECK(h.find(0) != nullptr); // in use, though measured longest ago
     CHECK(h.find(1) == nullptr);
     CHECK(h.find(2) == nullptr);
     h.keep(-1);
-    h.heard(42, -60, Floor, 22'000);
+    h.heard(42, -60, Floor, 22'000, l.weakDb);
     CHECK(h.find(0) == nullptr);
 }
 
 TEST_CASE("a repeater that never answered leaves the heard list once another is in use")
 {
+    const Levels l;
     HeardList h;
-    h.heard(1, -70, Floor, 1000);
+    h.heard(1, -70, Floor, 1000, l.weakDb);
     h.keep(0);
     h.unanswered(0, 2000); // in use, woken, never heard
     h.keep(0);
@@ -75,12 +78,13 @@ TEST_CASE("a repeater that never answered leaves the heard list once another is 
 
 TEST_CASE("a full heard list drops the repeater measured longest ago")
 {
+    const Levels l;
     HeardList h;
     for (std::uint8_t i = 0; i < HeardList::Capacity; ++i) {
-        h.heard(i, -70, Floor, 1000 + i * 1000u);
+        h.heard(i, -70, Floor, 1000 + i * 1000u, l.weakDb);
     }
-    h.heard(0, -70, Floor, 20'000); // the oldest is now the second
-    h.heard(40, -60, Floor, 21'000);
+    h.heard(0, -70, Floor, 20'000, l.weakDb); // the oldest is now the second
+    h.heard(40, -60, Floor, 21'000, l.weakDb);
     CHECK(h.entries().size() == HeardList::Capacity);
     CHECK(h.find(1) == nullptr);
     CHECK(h.find(0) != nullptr);
@@ -89,21 +93,23 @@ TEST_CASE("a full heard list drops the repeater measured longest ago")
 
 TEST_CASE("fresh levels are counted")
 {
+    const Levels l;
     HeardList h;
-    h.heard(1, -80, Floor, 0 + 5);
-    h.heard(1, -80, Floor, 1000);
+    h.heard(1, -80, Floor, 0 + 5, l.weakDb);
+    h.heard(1, -80, Floor, 1000, l.weakDb);
     CHECK(h.find(1)->samples == 2);
-    h.heard(1, -80, Floor, 1000 + HeardList::ValidMs);
+    h.heard(1, -80, Floor, 1000 + HeardList::ValidMs, l.weakDb);
     CHECK(h.find(1)->samples == 1);
 }
 
 TEST_CASE("the search order: the one in use, the heard ones, then the rest in the zone's order")
 {
+    const Levels l;
     HeardList h;
-    h.heard(6, -90, Floor, 1000);
-    h.heard(2, -70, Floor, 1000);
-    h.heard(9, -50, Floor, 1000 - HeardList::ValidMs); // an old level
-    h.unanswered(5, 1000);                             // never heard: no level
+    h.heard(6, -90, Floor, 1000, l.weakDb);
+    h.heard(2, -70, Floor, 1000, l.weakDb);
+    h.heard(9, -50, Floor, 1000 - HeardList::ValidMs, l.weakDb); // an old level
+    h.unanswered(5, 1000);                                       // never heard: no level
     std::array<std::uint8_t, 64> out{};
     const std::size_t n = searchOrder(h, 4, 10, 1000, out);
     const std::array<std::uint8_t, 10> expected{4, 2, 6, 9, 0, 1, 3, 5, 7, 8};
@@ -113,7 +119,7 @@ TEST_CASE("the search order: the one in use, the heard ones, then the rest in th
     }
     // Positions outside the zone are left out; no repeater in use.
     HeardList far;
-    far.heard(30, -40, Floor, 0);
+    far.heard(30, -40, Floor, 0, l.weakDb);
     CHECK(searchOrder(far, -1, 3, 0, out) == 3);
     CHECK(out[0] == 0);
     CHECK(searchOrder(h, -1, 0, 0, out) == 0);
@@ -144,9 +150,9 @@ TEST_CASE("the repeater in use: good, weak, quiet or lost")
     HeardList h;
     CHECK(roaming::health(h, -1, l, 0) == Health::Quiet); // none in use
     CHECK(roaming::health(h, 2, l, 0) == Health::Quiet);  // not heard yet
-    h.heard(2, -80, Floor, 1000);
+    h.heard(2, -80, Floor, 1000, l.weakDb);
     CHECK(roaming::health(h, 2, l, 1000) == Health::Good);
-    h.heard(3, -100, Floor, 1000);
+    h.heard(3, -100, Floor, 1000, l.weakDb);
     CHECK(roaming::health(h, 3, l, 1000) == Health::Weak);
     // Silent after being heard well: quiet, not lost; it may just be idle.
     CHECK(roaming::health(h, 2, l, 1000 + HeardList::ValidMs - 1) == Health::Good);
@@ -155,19 +161,61 @@ TEST_CASE("the repeater in use: good, weak, quiet or lost")
     // Silent after fading below the weak level: lost.
     CHECK(roaming::health(h, 3, l, 1000 + HeardList::ValidMs - 1) == Health::Weak);
     CHECK(roaming::health(h, 3, l, 1000 + HeardList::ValidMs) == Health::Lost);
-    h.heard(3, -80, Floor, 300'000); // heard well again
+    h.heard(3, -80, Floor, 300'000, l.weakDb); // heard well again
     CHECK(roaming::health(h, 3, l, 300'000) == Health::Good);
+}
+
+TEST_CASE("a repeater heard only below the weak level for 2 minutes counts as lost")
+{
+    const Levels l;
+    HeardList h;
+    // Heard only below the weak level from the start: weak, then lost
+    // once 2 minutes have passed since it was first heard.
+    h.heard(2, -97, Floor, 1000, l.weakDb); // 4 dB above the floor
+    CHECK(roaming::health(h, 2, l, 1000) == Health::Weak);
+    h.heard(2, -97, Floor, 1000 + HeardList::ValidMs - 1, l.weakDb); // heard again, still weak
+    CHECK(roaming::health(h, 2, l, 1000 + HeardList::ValidMs - 1) == Health::Weak);
+    h.heard(2, -97, Floor, 1000 + HeardList::ValidMs, l.weakDb); // 2 minutes below weak
+    CHECK(roaming::health(h, 2, l, 1000 + HeardList::ValidMs) == Health::Lost);
+    // Heard well again: back to good.
+    h.heard(2, -90, Floor, 200'000, l.weakDb);
+    CHECK(roaming::health(h, 2, l, 200'000) == Health::Good);
+    // Heard at the weak level, then only below it: weak for 2 minutes
+    // from the last hearing at or above the weak level, then lost.
+    HeardList g;
+    g.heard(2, -95, Floor, 1000, l.weakDb); // 6 dB: at the weak level
+    CHECK(roaming::health(g, 2, l, 1000) == Health::Good);
+    g.heard(2, -97, Floor, 2000, l.weakDb); // 5 dB: below weak
+    CHECK(roaming::health(g, 2, l, 2000) == Health::Weak);
+    g.heard(2, -97, Floor, 1000 + HeardList::ValidMs - 1, l.weakDb);
+    CHECK(roaming::health(g, 2, l, 1000 + HeardList::ValidMs - 1) == Health::Weak);
+    g.heard(2, -97, Floor, 1000 + HeardList::ValidMs, l.weakDb);
+    CHECK(roaming::health(g, 2, l, 1000 + HeardList::ValidMs) == Health::Lost);
+}
+
+TEST_CASE("a repeater that faded and is heard below weak again counts as lost")
+{
+    const Levels l;
+    HeardList h;
+    h.heard(2, -90, Floor, 1000, l.weakDb); // 11 dB: good
+    CHECK(roaming::health(h, 2, l, 1000) == Health::Good);
+    // Silent for 2 minutes: quiet, not lost; it may just be idle.
+    CHECK(roaming::health(h, 2, l, 1000 + HeardList::ValidMs) == Health::Quiet);
+    // Heard again, only below the weak level: it has not been heard at or
+    // above it for 2 minutes, so it counts as lost at once.
+    h.heard(2, -97, Floor, 1000 + HeardList::ValidMs + 1000, l.weakDb); // 4 dB
+    CHECK(roaming::health(h, 2, l, 1000 + HeardList::ValidMs + 1000) == Health::Lost);
 }
 
 TEST_CASE("an unanswered wake-up makes the repeater in use lost, until it is heard again")
 {
     const Levels l;
     HeardList h;
-    h.heard(2, -80, Floor, 1000);
+    h.heard(2, -80, Floor, 1000, l.weakDb);
     h.unanswered(2, 2000);
     CHECK(roaming::health(h, 2, l, 2000) == Health::Weak); // heard lately: weak
     CHECK(roaming::health(h, 2, l, 1000 + HeardList::ValidMs) == Health::Lost);
-    h.heard(2, -80, Floor, 200'000);
+    h.heard(2, -80, Floor, 200'000, l.weakDb);
     CHECK(roaming::health(h, 2, l, 200'000) == Health::Good);
     // Never heard, then unanswered: lost.
     h.unanswered(5, 3000);
@@ -179,16 +227,16 @@ TEST_CASE("a repeater heard again without a new level stays current")
 {
     const Levels l;
     HeardList h;
-    h.heard(2, -80, Floor, 1000);
+    h.heard(2, -80, Floor, 1000, l.weakDb);
     // Its bursts keep coming through a long run of calls.
-    h.stillHeard(2, 1000 + HeardList::ValidMs - 1);
+    h.stillHeard(2, 1000 + HeardList::ValidMs - 1, l.weakDb);
     CHECK(roaming::health(h, 2, l, 1000 + HeardList::ValidMs + 5000) == Health::Good);
     CHECK(h.find(2)->levelDbm == -80);
     CHECK(h.find(2)->samples == 1);
     // An old level is not revived.
-    h.stillHeard(2, 1000 + 3 * HeardList::ValidMs);
+    h.stillHeard(2, 1000 + 3 * HeardList::ValidMs, l.weakDb);
     CHECK(roaming::health(h, 2, l, 1000 + 3 * HeardList::ValidMs) == Health::Quiet);
-    h.stillHeard(7, 5000); // not in the list: nothing happens
+    h.stillHeard(7, 5000, l.weakDb); // not in the list: nothing happens
     CHECK(h.find(7) == nullptr);
 }
 
@@ -196,34 +244,34 @@ TEST_CASE("moves: never from good; from weak to a clearly better one; from quiet
 {
     const Levels l;
     HeardList h;
-    h.heard(0, -98, Floor, 1000); // in use: weak
-    h.heard(1, -93, Floor, 1000); // 5 dB better, measured twice
-    h.heard(1, -93, Floor, 2000);
-    h.heard(2, -80, Floor, 2000); // much better, measured once
+    h.heard(0, -98, Floor, 1000, l.weakDb); // in use: weak
+    h.heard(1, -93, Floor, 1000, l.weakDb); // 5 dB better, measured twice
+    h.heard(1, -93, Floor, 2000, l.weakDb);
+    h.heard(2, -80, Floor, 2000, l.weakDb); // much better, measured once
     CHECK(moveTo(h, 0, Health::Good, l, 2000) == -1);
     CHECK(moveTo(h, 0, Health::Weak, l, 2000) == -1); // 1 needs 6 dB, 2 a second level
-    h.heard(2, -80, Floor, 3000);
+    h.heard(2, -80, Floor, 3000, l.weakDb);
     CHECK(moveTo(h, 0, Health::Weak, l, 3000) == 2);
     CHECK(moveTo(h, 0, Health::Weak, l, 3000 + HeardList::ValidMs) == -1); // old levels
     // Quiet: only to a good one, even heard once; none in use counts as quiet.
     HeardList q;
-    q.heard(3, Floor + 8, Floor, 5);
+    q.heard(3, Floor + 8, Floor, 5, l.weakDb);
     CHECK(moveTo(q, 0, Health::Quiet, l, 5) == -1);
     CHECK(moveTo(q, -1, Health::Quiet, l, 5) == -1);
-    q.heard(4, Floor + 10, Floor, 5);
+    q.heard(4, Floor + 10, Floor, 5, l.weakDb);
     CHECK(moveTo(q, 0, Health::Quiet, l, 5) == 4);
     // Lost after an unanswered wake-up, or never heard: any current one.
     HeardList g;
-    g.heard(3, Floor + 1, Floor, 5);
+    g.heard(3, Floor + 1, Floor, 5, l.weakDb);
     CHECK(moveTo(g, 0, Health::Lost, l, 5) == 3);
     g.unanswered(0, 5);
     CHECK(moveTo(g, 0, Health::Lost, l, 5) == 3);
     // Lost after fading out: only to one stronger than it was last heard.
     HeardList f;
-    f.heard(0, Floor + 4, Floor, 0);
-    f.heard(3, Floor + 3, Floor, 200'000);
+    f.heard(0, Floor + 4, Floor, 0, l.weakDb);
+    f.heard(3, Floor + 3, Floor, 200'000, l.weakDb);
     CHECK(moveTo(f, 0, Health::Lost, l, 200'000) == -1);
-    f.heard(4, Floor + 5, Floor, 200'000);
+    f.heard(4, Floor + 5, Floor, 200'000, l.weakDb);
     CHECK(moveTo(f, 0, Health::Lost, l, 200'000) == 4);
 }
 
@@ -231,14 +279,14 @@ TEST_CASE("levels count in dB above each channel's floor")
 {
     const Levels l;
     HeardList h;
-    h.heard(0, -90, -101, 1000); // 11 dB above a quiet channel's floor: good
-    h.heard(1, -90, -92, 1000);  // 2 dB above a noisy one's: weak
+    h.heard(0, -90, -101, 1000, l.weakDb); // 11 dB above a quiet channel's floor: good
+    h.heard(1, -90, -92, 1000, l.weakDb);  // 2 dB above a noisy one's: weak
     CHECK(h.find(0)->levelDb() == 11);
     CHECK(h.find(1)->levelDb() == 2);
     CHECK(roaming::health(h, 0, l, 1000) == Health::Good);
     CHECK(roaming::health(h, 1, l, 1000) == Health::Weak);
     // Moves compare levels above each repeater's own floor.
-    h.heard(0, -90, -101, 2000);
+    h.heard(0, -90, -101, 2000, l.weakDb);
     CHECK(moveTo(h, 1, Health::Weak, l, 2000) == 0);
 }
 
@@ -287,15 +335,15 @@ TEST_CASE("good or weak: one check at a time during the idle transmission, and o
 {
     const Levels l;
     HeardList h;
-    h.heard(0, Floor + 12, Floor, 1000); // clearly good: no listening
+    h.heard(0, Floor + 12, Floor, 1000, l.weakDb); // clearly good: no listening
     Listening v;
     CHECK_FALSE(v.due(h, 0, l, true, 1000));
-    h.heard(1, Floor + 8, Floor, 1000); // good, below the good level
+    h.heard(1, Floor + 8, Floor, 1000, l.weakDb); // good, below the good level
     CHECK_FALSE(v.due(h, 1, l, false, 1000));
     CHECK(v.due(h, 1, l, true, 1000));
     v.done(1000);
     CHECK_FALSE(v.due(h, 1, l, true, 1000 + Listening::HopMs - 1));
-    h.heard(2, Floor + 3, Floor, 1000); // weak
+    h.heard(2, Floor + 3, Floor, 1000, l.weakDb); // weak
     CHECK(v.due(h, 2, l, true, 1000 + Listening::HopMs));
 }
 
@@ -326,10 +374,11 @@ TEST_CASE("another zone: a new pass starts in the new zone's order")
 
 TEST_CASE("another zone: the heard list follows its repeaters to their new positions")
 {
+    const Levels l;
     HeardList h;
-    h.heard(0, Floor + 20, Floor, 1000);
-    h.heard(1, Floor + 12, Floor, 1000);
-    h.heard(2, Floor + 8, Floor, 1000);
+    h.heard(0, Floor + 20, Floor, 1000, l.weakDb);
+    h.heard(1, Floor + 12, Floor, 1000, l.weakDb);
+    h.heard(2, Floor + 8, Floor, 1000, l.weakDb);
     h.keep(2);
     // 0 moves to 2, 1 is not in the new zone, 2 moves to 0; 3 was never there.
     const std::int16_t moved[] = {2, -1, 0};
@@ -342,7 +391,7 @@ TEST_CASE("another zone: the heard list follows its repeaters to their new posit
     CHECK(h.find(1) == nullptr);
     // The one in use, now at 0, is never dropped from a full list.
     for (std::uint8_t p = 10; p < 10 + HeardList::Capacity; ++p) {
-        h.heard(p, Floor + 30, Floor, 2000 + p);
+        h.heard(p, Floor + 30, Floor, 2000 + p, l.weakDb);
     }
     CHECK(h.find(0) != nullptr);
 }
@@ -351,7 +400,7 @@ TEST_CASE("lost: the gaps between bursts stay at the first")
 {
     const Levels l;
     HeardList h;
-    h.heard(0, Floor + 3, Floor, 1000); // faded below weak, then silent: lost
+    h.heard(0, Floor + 3, Floor, 1000, l.weakDb); // faded below weak, then silent: lost
     Listening v;
     const std::uint32_t t0 = 1000 + HeardList::ValidMs;
     REQUIRE(roaming::health(h, 0, l, t0) == Health::Lost);
@@ -396,19 +445,20 @@ TEST_CASE("quiet or lost: passes in bursts, with a dwell on the repeater in use 
     CHECK(v.due(h, 0, l, false, t + Listening::MaxGapMs));
     // Heard again, then quiet again: a burst at once.
     HeardList g;
-    g.heard(0, Floor + 8, Floor, 2'000'000);
+    g.heard(0, Floor + 8, Floor, 2'000'000, l.weakDb);
     CHECK(v.due(g, 0, l, true, 2'000'000));
     CHECK(v.due(g, 0, l, false, 2'000'000 + HeardList::ValidMs));
 }
 
 TEST_CASE("a pass checks the heard ones strongest first, each frequency once")
 {
+    const Levels l;
     HeardList h;
     const std::array<std::uint32_t, 6> hz{438'075'000, 434'575'000, 145'637'500, 434'575'000, 439'000'000, 438'075'000};
-    h.heard(1, Floor + 5, Floor, 1000);
-    h.heard(2, Floor + 9, Floor, 1000);
-    h.heard(3, Floor + 7, Floor, 1000);  // the same frequency as 1
-    h.heard(5, Floor + 20, Floor, 1000); // the same frequency as the one in use
+    h.heard(1, Floor + 5, Floor, 1000, l.weakDb);
+    h.heard(2, Floor + 9, Floor, 1000, l.weakDb);
+    h.heard(3, Floor + 7, Floor, 1000, l.weakDb);  // the same frequency as 1
+    h.heard(5, Floor + 20, Floor, 1000, l.weakDb); // the same frequency as the one in use
     Listening v;
     CHECK(v.next(h, hz, 0, 1000) == 2);
     CHECK(v.next(h, hz, 0, 1000) == 3);

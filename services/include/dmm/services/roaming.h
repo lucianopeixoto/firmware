@@ -33,6 +33,7 @@ public:
         std::uint8_t samples = 0; // levels measured while current, up to 255; 0: none
         bool unanswered = false;  // a wake-up went unanswered since it was last heard
         std::uint32_t measuredMs = 0;
+        std::uint32_t weakMs = 0; // last heard at or above the weak level, or first heard if never
 
         int levelDb() const { return levelDbm - floorDbm; }
         bool current(std::uint32_t nowMs) const { return samples > 0 && nowMs - measuredMs < ValidMs; }
@@ -45,11 +46,11 @@ public:
     /// answering, goes once another is in use.
     void keep(int position);
     /// Repeater @p position heard at @p levelDbm on a channel whose floor is
-    /// @p floorDbm.
-    void heard(std::uint8_t position, int levelDbm, int floorDbm, std::uint32_t nowMs);
+    /// @p floorDbm. @p weakDb is the weak level in dB above the floor.
+    void heard(std::uint8_t position, int levelDbm, int floorDbm, std::uint32_t nowMs, int weakDb);
     /// Repeater @p position is heard again without a new level: a current
     /// level stays current.
-    void stillHeard(std::uint8_t position, std::uint32_t nowMs);
+    void stillHeard(std::uint8_t position, std::uint32_t nowMs, int weakDb);
     /// Repeater @p position did not answer a wake-up: until it is heard
     /// again.
     void unanswered(std::uint8_t position, std::uint32_t nowMs);
@@ -110,9 +111,9 @@ struct Levels
 enum class Health : std::uint8_t
 {
     Good,
-    Weak,  // below the weak level, or heard lately but a wake-up went unanswered
+    Weak,  // below the weak level, but heard at or above it lately; or heard lately but a wake-up went unanswered
     Quiet, // not heard lately, last heard at the weak level or above, or none in use yet
-    Lost,  // not heard lately, and a wake-up went unanswered or it was last heard below the weak level
+    Lost,  // not heard at or above the weak level for 2 minutes, and heard below it or a wake-up went unanswered
 };
 
 /// The health of repeater @p site (-1: none in use).

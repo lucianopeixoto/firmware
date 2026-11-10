@@ -71,6 +71,7 @@ HeardList::Entry &HeardList::place(std::uint8_t position, std::uint32_t nowMs)
     m_entries[i] = Entry{};
     m_entries[i].position = position;
     m_entries[i].measuredMs = nowMs;
+    m_entries[i].weakMs = nowMs;
     return m_entries[i];
 }
 
@@ -86,7 +87,7 @@ void HeardList::keep(int position)
     m_count = kept;
 }
 
-void HeardList::heard(std::uint8_t position, int levelDbm, int floorDbm, std::uint32_t nowMs)
+void HeardList::heard(std::uint8_t position, int levelDbm, int floorDbm, std::uint32_t nowMs, int weakDb)
 {
     Entry &e = place(position, nowMs);
     // A current level is smoothed; an old one is replaced.
@@ -96,13 +97,19 @@ void HeardList::heard(std::uint8_t position, int levelDbm, int floorDbm, std::ui
     e.unanswered = false;
     e.samples = current ? static_cast<std::uint8_t>(std::min(e.samples + 1, 255)) : 1;
     e.measuredMs = nowMs;
+    if (e.levelDb() >= weakDb) {
+        e.weakMs = nowMs;
+    }
 }
 
-void HeardList::stillHeard(std::uint8_t position, std::uint32_t nowMs)
+void HeardList::stillHeard(std::uint8_t position, std::uint32_t nowMs, int weakDb)
 {
     for (std::size_t i = 0; i < m_count; ++i) {
         if (m_entries[i].position == position && m_entries[i].current(nowMs)) {
             m_entries[i].measuredMs = nowMs;
+            if (m_entries[i].levelDb() >= weakDb) {
+                m_entries[i].weakMs = nowMs;
+            }
         }
     }
 }
@@ -201,7 +208,15 @@ Health health(const HeardList &heard, int site, const Levels &levels, std::uint3
         const bool faded = e->samples > 0 && e->levelDb() < levels.weakDb;
         return e->unanswered || faded ? Health::Lost : Health::Quiet;
     }
-    return e->levelDb() >= levels.weakDb && !e->unanswered ? Health::Good : Health::Weak;
+    if (e->levelDb() >= levels.weakDb && !e->unanswered) {
+        return Health::Good;
+    }
+    if (e->unanswered) {
+        return Health::Weak; // heard lately but a wake-up went unanswered
+    }
+    // Below the weak level: weak while it was heard at or above it
+    // lately, lost once it has not been for 2 minutes.
+    return nowMs - e->weakMs >= HeardList::ValidMs ? Health::Lost : Health::Weak;
 }
 
 int moveTo(const HeardList &heard, int site, Health state, const Levels &levels, std::uint32_t nowMs)
